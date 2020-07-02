@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
@@ -11,6 +12,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +26,7 @@ using Microsoft.Build.Exceptions;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Graph;
 using Microsoft.Build.Internal;
+using Microsoft.Build.Cache;
 using Microsoft.Build.Logging;
 using Microsoft.Build.Shared;
 using ForwardingLoggerRecord = Microsoft.Build.Logging.ForwardingLoggerRecord;
@@ -1399,6 +1402,41 @@ namespace Microsoft.Build.Execution
             }
         }
 
+#if FEATURE_ASSEMBLYLOADCONTEXT
+        private static readonly CoreClrAssemblyLoader _loader = new CoreClrAssemblyLoader();
+#endif
+
+        private static Func<ProjectGraphNode, IReadOnlyCollection<string>, CacheContext, ProjectCache> GetProjectCacheInstantiator()
+        {
+            var pluginDll = @"E:\projects\CloudBuild\private\Tools\QuickbuildProjectCachePlugin\src\objd\amd64\QuickbuildProjectCachePlugin.dll";
+
+            var assembly = LoadAssembly(pluginDll);
+
+            var pluginType = GetTypes<ProjectCache>(assembly).First();
+
+            return (node, entryTargets, cacheContext) =>
+            {
+                return (ProjectCache) Activator.CreateInstance(pluginType, new object[] {node, entryTargets, cacheContext});
+            };
+
+            Assembly LoadAssembly(string resolverPath)
+            {
+    #if !FEATURE_ASSEMBLYLOADCONTEXT
+                return Assembly.LoadFrom(resolverPath);
+    #else
+                return _loader.LoadFromPath(resolverPath);
+    #endif
+            }
+
+        IEnumerable<Type> GetTypes<T>(Assembly assembly)
+        {
+            return assembly.ExportedTypes
+                .Select(type => new {type, info = type.GetTypeInfo()})
+                .Where(t => t.info.IsClass && t.info.IsPublic && !t.info.IsAbstract && typeof(T).IsAssignableFrom(t.type))
+                .Select(t => t.type);
+        }
+        }
+
         private void ExecuteGraphBuildScheduler(GraphBuildSubmission submission)
         {
             try
@@ -1457,7 +1495,16 @@ namespace Microsoft.Build.Execution
                 var blockedNodes = new HashSet<ProjectGraphNode>(projectGraph.ProjectNodes);
                 var finishedNodes = new HashSet<ProjectGraphNode>(projectGraph.ProjectNodes.Count);
                 var buildingNodes = new Dictionary<BuildSubmission, ProjectGraphNode>();
-                Dictionary<ProjectGraphNode, BuildResult> resultsPerNode = new Dictionary<ProjectGraphNode, BuildResult>(projectGraph.ProjectNodes.Count);
+
+                var resultsPerNode = new Dictionary<ProjectGraphNode, BuildResult>(projectGraph.ProjectNodes.Count);
+
+                var cacheResultTypeCounts = new ConcurrentDictionary<CacheResultType, int>(
+                    Enum.GetValues(typeof(CacheResultType))
+                        .Cast<CacheResultType>()
+                        .ToDictionary(k => k, k => 0));
+
+                var instantiateProjectCache = GetProjectCacheInstantiator();
+                
                 while (blockedNodes.Count > 0 || buildingNodes.Count > 0)
                 {
                     waitHandle.WaitOne();
@@ -1467,6 +1514,7 @@ namespace Microsoft.Build.Execution
                         var unblockedNodes = blockedNodes
                             .Where(node => node.ProjectReferences.All(projectReference => finishedNodes.Contains(projectReference)))
                             .ToList();
+
                         foreach (var node in unblockedNodes)
                         {
                             var targetList = targetLists[node];
@@ -1479,6 +1527,37 @@ namespace Microsoft.Build.Execution
                                 waitHandle.Set();
 
                                 continue;
+                            }
+
+                            //var cacheResult = new TestCache(node, targetList, new CacheContext()).GetCacheResultAsync(CancellationToken.None).Result;
+                            var cacheResult = instantiateProjectCache(node, targetList, new CacheContext())
+                                .GetCacheResultAsync(CancellationToken.None)
+                                .Result;
+
+                            cacheResultTypeCounts.AddOrUpdate(
+                                cacheResult.ResultType,
+                                k => 1,
+                                (key, currentCount) => currentCount + 1);
+
+                            LogMessage($"({cacheResult.ResultType}): {cacheResult.Details}");
+
+                            switch (cacheResult.ResultType)
+                            {
+                                case CacheResultType.CacheHit:
+                                    finishedNodes.Add(node);
+                                    blockedNodes.Remove(node);
+
+                                    waitHandle.Set();
+
+                                    continue;
+                                case CacheResultType.CacheMiss:
+                                    break;
+                                case CacheResultType.CacheNotApplicable:
+                                    break;
+                                case CacheResultType.CacheError:
+                                    break;
+                                default:
+                                    throw new ArgumentOutOfRangeException(nameof(cacheResult.ResultType));
                             }
 
                             var request = new BuildRequestData(
@@ -1511,6 +1590,11 @@ namespace Microsoft.Build.Execution
                         }
                     }
                 }
+
+                LogMessage(
+                    string.Join(
+                        ", ",
+                        cacheResultTypeCounts.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key}: {kvp.Value}")));
 
                 // The overall submission is complete, so report it as complete
                 ReportResultsToSubmission(new GraphBuildResult(submission.SubmissionId, new ReadOnlyDictionary<ProjectGraphNode, BuildResult>(resultsPerNode)));
