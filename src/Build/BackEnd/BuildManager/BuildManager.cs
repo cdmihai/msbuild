@@ -27,8 +27,10 @@ using Microsoft.Build.Framework;
 using Microsoft.Build.Graph;
 using Microsoft.Build.Internal;
 using Microsoft.Build.Cache;
+using Microsoft.Build.FileSystem;
 using Microsoft.Build.Logging;
 using Microsoft.Build.Shared;
+using Microsoft.Build.Shared.FileSystem;
 using ForwardingLoggerRecord = Microsoft.Build.Logging.ForwardingLoggerRecord;
 using LoggerDescription = Microsoft.Build.Logging.LoggerDescription;
 
@@ -1507,7 +1509,9 @@ namespace Microsoft.Build.Execution
                     .Invoke(
                         new CacheContext
                         {
-                            Graph = projectGraph
+                            Graph = projectGraph,
+                            // TODO make project graph use an evaluation context with a single file system and reuse that for plugins as well
+                            FileSystem = new FileSystemAdapter(new CachingFileSystemWrapper(FileSystems.Default))
                         });
 
                 while (blockedNodes.Count > 0 || buildingNodes.Count > 0)

@@ -267,6 +267,7 @@
     <Compile Include="Evaluation\LazyItemEvaluator.RemoveOperation.cs" />
     <Compile Include="Evaluation\MetadataReference.cs" />
     <Compile Include="FileSystem\MSBuildFileSystemAdapter.cs" />
+    <Compile Include="FileSystem\FileSystemAdapter.cs" />
     <Compile Include="Graph\ProjectGraphEntryPoint.cs" />
     <Compile Include="Graph\ProjectGraph.cs" />
     <Compile Include="Graph\ProjectGraphNode.cs" />

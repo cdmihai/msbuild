@@ -5,7 +5,8 @@ namespace Microsoft.Build.Cache
     public partial class CacheContext
     {
         public CacheContext() { }
-        public Microsoft.Build.Graph.ProjectGraph Graph { get { throw null; } }
+        public Microsoft.Build.FileSystem.MSBuildFileSystemBase FileSystem { get { throw null; } set { } }
+        public Microsoft.Build.Graph.ProjectGraph Graph { get { throw null; } set { } }
     }
     public partial class CacheResult
     {
@@ -20,17 +21,10 @@ namespace Microsoft.Build.Cache
     }
     public abstract partial class ProjectCache
     {
-        public ProjectCache(Microsoft.Build.Graph.ProjectGraphNode node, System.Collections.Generic.IReadOnlyCollection<string> entryTargets, Microsoft.Build.Cache.CacheContext context) { }
-        public abstract System.Threading.Tasks.Task<Microsoft.Build.Cache.CacheResult> GetCacheResultAsync(System.Threading.CancellationToken cancellationToken);
-    }
-    public abstract partial class ProjectCacheProvider
-    {
-        protected ProjectCacheProvider(Microsoft.Build.Cache.CacheContext context) { }
-    }
-    public partial class TestCache : Microsoft.Build.Cache.ProjectCache
-    {
-        public TestCache(Microsoft.Build.Graph.ProjectGraphNode node, System.Collections.Generic.IReadOnlyCollection<string> entryTargets, Microsoft.Build.Cache.CacheContext context) : base (default(Microsoft.Build.Graph.ProjectGraphNode), default(System.Collections.Generic.IReadOnlyCollection<string>), default(Microsoft.Build.Cache.CacheContext)) { }
-        public override System.Threading.Tasks.Task<Microsoft.Build.Cache.CacheResult> GetCacheResultAsync(System.Threading.CancellationToken cancellationToken) { throw null; }
+        protected ProjectCache() { }
+        public abstract void AfterGraphWalk();
+        public abstract System.Threading.Tasks.Task<Microsoft.Build.Cache.CacheResult> GetCacheResultAsync(Microsoft.Build.Graph.ProjectGraphNode node, System.Collections.Generic.IReadOnlyCollection<string> entryTargets, System.Threading.CancellationToken cancellationToken);
+        public abstract void Initialize(Microsoft.Build.Cache.CacheContext context);
     }
 }
 namespace Microsoft.Build.Construction
