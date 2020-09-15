@@ -7,6 +7,6 @@ namespace Microsoft.Build.Cache
 {
     public class CacheContext
     {
-        public ProjectGraph Graph { get; }
+        public ProjectGraph Graph { get; set; }
     }
 }

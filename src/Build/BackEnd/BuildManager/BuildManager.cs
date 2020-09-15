@@ -1406,7 +1406,7 @@ namespace Microsoft.Build.Execution
         private static readonly CoreClrAssemblyLoader _loader = new CoreClrAssemblyLoader();
 #endif
 
-        private static Func<ProjectGraphNode, IReadOnlyCollection<string>, CacheContext, ProjectCache> GetProjectCacheInstantiator()
+        private static Func<CacheContext, ProjectCache> GetProjectCacheInstantiator()
         {
             var pluginDll = @"E:\projects\CloudBuild\private\Tools\QuickbuildProjectCachePlugin\src\objd\amd64\QuickbuildProjectCachePlugin.dll";
 
@@ -1414,9 +1414,9 @@ namespace Microsoft.Build.Execution
 
             var pluginType = GetTypes<ProjectCache>(assembly).First();
 
-            return (node, entryTargets, cacheContext) =>
+            return cacheContext =>
             {
-                return (ProjectCache) Activator.CreateInstance(pluginType, new object[] {node, entryTargets, cacheContext});
+                return (ProjectCache) Activator.CreateInstance(pluginType, new object[] {cacheContext});
             };
 
             Assembly LoadAssembly(string resolverPath)
@@ -1503,8 +1503,13 @@ namespace Microsoft.Build.Execution
                         .Cast<CacheResultType>()
                         .ToDictionary(k => k, k => 0));
 
-                var instantiateProjectCache = GetProjectCacheInstantiator();
-                
+                var projectCache = GetProjectCacheInstantiator()
+                    .Invoke(
+                        new CacheContext
+                        {
+                            Graph = projectGraph
+                        });
+
                 while (blockedNodes.Count > 0 || buildingNodes.Count > 0)
                 {
                     waitHandle.WaitOne();
@@ -1530,8 +1535,7 @@ namespace Microsoft.Build.Execution
                             }
 
                             //var cacheResult = new TestCache(node, targetList, new CacheContext()).GetCacheResultAsync(CancellationToken.None).Result;
-                            var cacheResult = instantiateProjectCache(node, targetList, new CacheContext())
-                                .GetCacheResultAsync(CancellationToken.None)
+                            var cacheResult = projectCache.GetCacheResultAsync(node, targetList, CancellationToken.None)
                                 .Result;
 
                             cacheResultTypeCounts.AddOrUpdate(

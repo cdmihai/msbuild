@@ -16,36 +16,23 @@ namespace Microsoft.Build.Cache
     /// </summary>
     public abstract class ProjectCache
     {
-        public ProjectCache(ProjectGraphNode node, IReadOnlyCollection<string> entryTargets, CacheContext context) { }
+        /// <summary>
+        /// Called once before the build to instantiate the plugin state.
+        /// </summary>
+        public abstract void Initialize(CacheContext context);
 
-        public abstract Task<CacheResult> GetCacheResultAsync(CancellationToken cancellationToken);
-    }
+        /// <summary>
+        /// Called for each node in the graph.
+        /// Operation needs to be atomic. Any side effects (IO, environment variables, etc) need to be reverted upon cancellation.
+        /// </summary>
+        public abstract Task<CacheResult> GetCacheResultAsync(
+            ProjectGraphNode node,
+            IReadOnlyCollection<string> entryTargets,
+            CancellationToken cancellationToken);
 
-    public abstract class ProjectCacheProvider
-    {
-        protected ProjectCacheProvider(CacheContext context) { }
-    }
-
-    public class TestCache : ProjectCache
-    {
-        public TestCache(ProjectGraphNode node, IReadOnlyCollection<string> entryTargets, CacheContext context) : base(
-            node,
-            entryTargets,
-            context) { }
-
-        public override Task<CacheResult> GetCacheResultAsync(CancellationToken cancellationToken)
-        {
-            var results = new List<(CacheResultType, string)>
-            {
-                (CacheResultType.CacheError, "Error!!"),
-                (CacheResultType.CacheHit, "Hit!!"),
-                (CacheResultType.CacheMiss, "Miss!!"),
-                (CacheResultType.CacheNotApplicable, "Not applicable!!")
-            };
-
-            var ret = results.ElementAt(new Random().Next(0, 5));
-
-            return Task.FromResult(new CacheResult(ret.Item1, ret.Item2, null, null));
-        }
+        /// <summary>
+        /// Called once after the build to let the plugin do any post build operations (log metrics, cleanup, etc).
+        /// </summary>
+        public abstract void AfterGraphWalk();
     }
 }
