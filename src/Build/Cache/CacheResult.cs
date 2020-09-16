@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Build.Shared;
 
 namespace Microsoft.Build.Cache
@@ -21,17 +22,19 @@ namespace Microsoft.Build.Cache
         internal IReadOnlyCollection<string> Warnings { get; }
         internal IReadOnlyCollection<string> Errors { get; }
 
+        private static readonly IReadOnlyCollection<string> EmptyStringList = new string[0];
+
         public CacheResult(
             CacheResultType resultType,
             string details,
-            IReadOnlyCollection<string> warnings,
-            IReadOnlyCollection<string> errors
+            IReadOnlyCollection<string> warnings = null,
+            IReadOnlyCollection<string> errors = null
         )
         {
             ResultType = resultType;
             Details = details;
-            Warnings = warnings;
-            Errors = errors;
+            Warnings = warnings ?? EmptyStringList;
+            Errors = errors ?? EmptyStringList;
 
             if (resultType != CacheResultType.CacheError)
             {
