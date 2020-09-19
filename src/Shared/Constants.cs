@@ -113,6 +113,8 @@ namespace Microsoft.Build.Shared
         /// </summary>
         internal const string IsGraphBuild = nameof(IsGraphBuild);
 
+        internal const string GraphEntryPointsForProjectCachePlugins = nameof(GraphEntryPointsForProjectCachePlugins);
+
         internal const string InnerBuildProperty = nameof(InnerBuildProperty);
         internal const string InnerBuildPropertyValues = nameof(InnerBuildPropertyValues);
     }

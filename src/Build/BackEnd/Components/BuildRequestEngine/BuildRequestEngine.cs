@@ -11,6 +11,8 @@ using System.Threading;
 using System.Threading.Tasks.Dataflow;
 using Microsoft.Build.BackEnd.Logging;
 using Microsoft.Build.Execution;
+using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.Build.Framework;
 using Microsoft.Build.Shared;
 using BuildAbortedException = Microsoft.Build.Exceptions.BuildAbortedException;
 
@@ -295,7 +297,59 @@ namespace Microsoft.Build.BackEnd
                 _requestsByGlobalRequestId.Clear();
                 _unsubmittedRequests.Clear();
                 _unresolvedConfigurations.ClearConfigurations();
+
+                var pluginLogger = new NodeLoggingContextToPluginLoggerAdapter(_nodeLoggingContext, LoggerVerbosity.Detailed);
+
+                _nodeLoggingContext.LogCommentFromText(MessageImportance.High, "\n====== Shutting down project cache plugins.");
+
+                foreach (var kvp in RequestBuilder.ProjectCachePlugins)
+                {
+                    _nodeLoggingContext.LogCommentFromText(MessageImportance.High, $"\n====== Shutting down plugin for entry points {kvp.Key}");
+                    kvp.Value.EndBuildAsync(pluginLogger, CancellationToken.None).GetAwaiter().GetResult();
+                }
+
                 ChangeStatus(BuildRequestEngineStatus.Uninitialized);
+            }
+        }
+
+        public class NodeLoggingContextToPluginLoggerAdapter : PluginLoggerBase
+        {
+            private readonly NodeLoggingContext _nodeLoggingContext;
+
+            public NodeLoggingContextToPluginLoggerAdapter(
+                NodeLoggingContext nodeLoggingContext,
+                LoggerVerbosity verbosity) : base(verbosity)
+            {
+                _nodeLoggingContext = nodeLoggingContext;
+            }
+
+            public override bool HasLoggedErrors { get; protected set;}
+
+            public override void LogMessage(string message)
+            {
+                _nodeLoggingContext.LogCommentFromText(MessageImportance.High, message);
+            }
+
+            public override void LogWarning(string warning)
+            {
+                _nodeLoggingContext.LogWarningFromText(
+                    null,
+                    null,
+                    null,
+                    BuildEventFileInfo.Empty,
+                    warning);
+            }
+
+            public override void LogError(string error)
+            {
+                HasLoggedErrors = true;
+
+                _nodeLoggingContext.LogErrorFromText(
+                    null,
+                    null,
+                    null,
+                    BuildEventFileInfo.Empty,
+                    error);
             }
         }
 

@@ -13,6 +13,11 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
 <Project>
 
+  <PropertyGroup>
+    <!--When building a solution with msbuild.exe or when building from VS use the solution as the graph entry point -->
+    <GraphEntryPointsForProjectCachePlugins Condition="'$(GraphEntryPointsForProjectCachePlugins)' == '' and '$(SolutionPath)' != '' and '$(SolutionPath)' != '*Undefined*'">$(SolutionPath)</GraphEntryPointsForProjectCachePlugins>
+  </PropertyGroup>
+
    <!-- Define crosstargeting for static graph, so it can identify inner and outer build graph nodes -->
    <PropertyGroup>
       <InnerBuildProperty>TargetFramework</InnerBuildProperty>

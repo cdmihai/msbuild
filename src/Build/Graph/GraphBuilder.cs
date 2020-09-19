@@ -58,7 +58,7 @@ namespace Microsoft.Build.Graph
 
             _solutionDependencies = solutionDependencies;
 
-            _entryPointConfigurationMetadata = AddGraphBuildPropertyToEntryPoints(actualEntryPoints);
+            _entryPointConfigurationMetadata = AddGraphBuildSpecificPropertiesToEntryPoints(actualEntryPoints);
             
             IEqualityComparer<ConfigurationMetadata> configComparer = EqualityComparer<ConfigurationMetadata>.Default;
 
@@ -376,7 +376,7 @@ namespace Microsoft.Build.Graph
             }
         }
 
-        private static List<ConfigurationMetadata> AddGraphBuildPropertyToEntryPoints(IEnumerable<ProjectGraphEntryPoint> entryPoints)
+        private static List<ConfigurationMetadata> AddGraphBuildSpecificPropertiesToEntryPoints(IReadOnlyCollection<ProjectGraphEntryPoint> entryPoints)
         {
             {
                 var entryPointConfigurationMetadata = new List<ConfigurationMetadata>();
@@ -385,7 +385,7 @@ namespace Microsoft.Build.Graph
                 {
                     var globalPropertyDictionary = CreatePropertyDictionary(entryPoint.GlobalProperties);
 
-                    AddGraphBuildGlobalVariable(globalPropertyDictionary);
+                    AddGraphBuildSpecificGlobalVariables(globalPropertyDictionary, entryPoints);
 
                     var configurationMetadata = new ConfigurationMetadata(FileUtilities.NormalizePath(entryPoint.ProjectFile), globalPropertyDictionary);
                     entryPointConfigurationMetadata.Add(configurationMetadata);
@@ -394,11 +394,23 @@ namespace Microsoft.Build.Graph
                 return entryPointConfigurationMetadata;
             }
 
-            void AddGraphBuildGlobalVariable(PropertyDictionary<ProjectPropertyInstance> globalPropertyDictionary)
+            void AddGraphBuildSpecificGlobalVariables(
+                PropertyDictionary<ProjectPropertyInstance> globalPropertyDictionary,
+                IReadOnlyCollection<ProjectGraphEntryPoint> projectGraphEntryPoints)
             {
                 if (globalPropertyDictionary.GetProperty(PropertyNames.IsGraphBuild) == null)
                 {
                     globalPropertyDictionary[PropertyNames.IsGraphBuild] = ProjectPropertyInstance.Create(PropertyNames.IsGraphBuild, "true");
+                }
+
+                if (globalPropertyDictionary.GetProperty(PropertyNames.GraphEntryPointsForProjectCachePlugins) == null)
+                {
+                    globalPropertyDictionary[PropertyNames.GraphEntryPointsForProjectCachePlugins] =
+                        ProjectPropertyInstance.Create(
+                            PropertyNames.GraphEntryPointsForProjectCachePlugins,
+                            string.Join(
+                                ";",
+                                projectGraphEntryPoints.Select(ep => FileUtilities.NormalizePath(ep.ProjectFile))));
                 }
             }
         }

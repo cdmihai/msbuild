@@ -3,6 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using Microsoft.Build.Collections;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Shared;
@@ -80,6 +83,7 @@ namespace Microsoft.Build.Execution
     /// <summary>
     /// BuildRequestData encapsulates all of the data needed to submit a build request.
     /// </summary>
+    [DebuggerDisplay("{DebuggerDisplay()}")]
     public class BuildRequestData
     {
         /// <summary>
@@ -297,5 +301,12 @@ namespace Microsoft.Build.Execution
         /// Returns the global properties as a dictionary.
         /// </summary>
         internal PropertyDictionary<ProjectPropertyInstance> GlobalPropertiesDictionary { get; }
+
+        private string DebuggerDisplay()
+        {
+            return $"{Path.GetFileName(ProjectFullPath)};" +
+                   $" targets: [{string.Join(", ", this.TargetNames)}];" +
+                   $" global properties:{{{string.Join(", ", this.GlobalProperties.Select(gp => $"{gp.Name}={gp.EvaluatedValue}"))}}}";
+        }
     }
 }

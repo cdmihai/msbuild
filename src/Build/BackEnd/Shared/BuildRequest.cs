@@ -304,6 +304,7 @@ namespace Microsoft.Build.BackEnd
         }
 
         private HostServices _hostServices;
+        private string _submissionProjectPath;
 
         /// <summary>
         /// Returns true if this is a root request (one which has no parent.)
@@ -319,6 +320,12 @@ namespace Microsoft.Build.BackEnd
         /// Whether static graph isolation constraints should be skipped for this request
         /// </summary>
         internal bool SkipStaticGraphIsolationConstraints => _skipStaticGraphIsolationConstraints;
+
+        public string SubmissionProjectPath
+        {
+            get => _submissionProjectPath;
+            set => _submissionProjectPath = value;
+        }
 
         /// <summary>
         /// Sets the configuration id to a resolved id.
@@ -350,6 +357,7 @@ namespace Microsoft.Build.BackEnd
             translator.Translate(ref _skipStaticGraphIsolationConstraints);
             translator.Translate(ref _requestedProjectState);
             translator.Translate(ref _hostServices);
+            translator.Translate(ref _submissionProjectPath);
 
             // UNDONE: (Compat) Serialize the host object.
         }

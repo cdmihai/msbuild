@@ -208,7 +208,9 @@ namespace Microsoft.Build.Execution
             else
             {
                 _requestException = exception ?? existingResults._requestException;
-                _resultsByTarget = targetNames == null ? existingResults._resultsByTarget : CreateTargetResultDictionaryWithContents(existingResults, targetNames);
+                _resultsByTarget = targetNames == null
+                    ? existingResults._resultsByTarget ?? CreateTargetResultDictionary(0)
+                    : CreateTargetResultDictionaryWithContents(existingResults, targetNames);
             }
         }
 
@@ -304,7 +306,7 @@ namespace Microsoft.Build.Execution
         }
 
         /// <summary>
-        /// Returns the exception generated while this result was run, if any. 
+        /// Returns the exception generated while this result was run, if any.
         /// </summary>
         public Exception Exception
         {
@@ -464,6 +466,9 @@ namespace Microsoft.Build.Execution
         {
             ErrorUtilities.VerifyThrowArgumentNull(target, nameof(target));
             ErrorUtilities.VerifyThrowArgumentNull(result, nameof(result));
+
+            _resultsByTarget ??= CreateTargetResultDictionary(1);
+
             if (_resultsByTarget.ContainsKey(target))
             {
                 ErrorUtilities.VerifyThrow(_resultsByTarget[target].ResultCode == TargetResultCode.Skipped, "Items already exist for target {0}.", target);
@@ -613,8 +618,8 @@ namespace Microsoft.Build.Execution
         }
 
         /// <summary>
-        /// Creates the target result dictionary and populates it with however many target results are 
-        /// available given the list of targets passed. 
+        /// Creates the target result dictionary and populates it with however many target results are
+        /// available given the list of targets passed.
         /// </summary>
         private static ConcurrentDictionary<string, TargetResult> CreateTargetResultDictionaryWithContents(BuildResult existingResults, string[] targetNames)
         {
