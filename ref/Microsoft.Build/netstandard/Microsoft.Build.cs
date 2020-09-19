@@ -1403,6 +1403,60 @@ namespace Microsoft.Build.Execution
         Success = (byte)1,
     }
 }
+namespace Microsoft.Build.Experimental.ProjectCache
+{
+    public partial class CacheContext
+    {
+        public CacheContext(Microsoft.Build.FileSystem.MSBuildFileSystemBase fileSystem, Microsoft.Build.Graph.ProjectGraph graph=null, System.Collections.Generic.IReadOnlyCollection<Microsoft.Build.Graph.ProjectGraphEntryPoint> graphEntryPoints=null) { }
+        public Microsoft.Build.FileSystem.MSBuildFileSystemBase FileSystem { get { throw null; } }
+        public Microsoft.Build.Graph.ProjectGraph Graph { get { throw null; } }
+        public System.Collections.Generic.IReadOnlyCollection<Microsoft.Build.Graph.ProjectGraphEntryPoint> GraphEntryPoints { get { throw null; } }
+    }
+    [System.Runtime.InteropServices.StructLayoutAttribute(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public partial struct CacheResult
+    {
+        public CacheResult(Microsoft.Build.Experimental.ProjectCache.CacheResultType resultType) { throw null;}
+        public CacheResult(Microsoft.Build.Experimental.ProjectCache.CacheResultType resultType, Microsoft.Build.Execution.BuildResult buildResult=null) { throw null;}
+        public CacheResult(Microsoft.Build.Experimental.ProjectCache.CacheResultType resultType, System.Collections.Generic.IReadOnlyCollection<Microsoft.Build.Experimental.ProjectCache.PluginTargetResult> targetResults) { throw null;}
+        public CacheResult(Microsoft.Build.Experimental.ProjectCache.CacheResultType resultType, System.Nullable<Microsoft.Build.Experimental.ProjectCache.ProxyBuildResults> proxyBuildResults=default(System.Nullable<Microsoft.Build.Experimental.ProjectCache.ProxyBuildResults>)) { throw null;}
+    }
+    public enum CacheResultType
+    {
+        CacheError = 3,
+        CacheHit = 0,
+        CacheMiss = 1,
+        CacheNotApplicable = 2,
+    }
+    public abstract partial class PluginLoggerBase
+    {
+        public PluginLoggerBase(Microsoft.Build.Framework.LoggerVerbosity verbosity) { }
+        public abstract bool HasLoggedErrors { get; protected set; }
+        public abstract void LogError(string error);
+        public abstract void LogMessage(string message);
+        public abstract void LogWarning(string warning);
+    }
+    [System.Runtime.InteropServices.StructLayoutAttribute(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public partial struct PluginTargetResult
+    {
+        public PluginTargetResult(string targetName, System.Collections.Generic.IReadOnlyCollection<Microsoft.Build.Framework.ITaskItem2> taskItems, Microsoft.Build.Execution.BuildResultCode resultCode) { throw null;}
+        public Microsoft.Build.Execution.BuildResultCode ResultCode { get { throw null; } }
+        public string TargetName { get { throw null; } }
+        public System.Collections.Generic.IReadOnlyCollection<Microsoft.Build.Framework.ITaskItem2> TaskItems { get { throw null; } }
+    }
+    public abstract partial class ProjectCacheBase
+    {
+        protected ProjectCacheBase() { }
+        public abstract System.Threading.Tasks.Task<bool> BeginBuildAsync(Microsoft.Build.Experimental.ProjectCache.CacheContext context, Microsoft.Build.Experimental.ProjectCache.PluginLoggerBase logger, System.Threading.CancellationToken cancellationToken);
+        public abstract System.Threading.Tasks.Task EndBuildAsync(Microsoft.Build.Experimental.ProjectCache.PluginLoggerBase logger, System.Threading.CancellationToken cancellationToken);
+        public abstract System.Threading.Tasks.Task<Microsoft.Build.Experimental.ProjectCache.CacheResult> GetCacheResultAsync(Microsoft.Build.Execution.BuildRequestData node, Microsoft.Build.Experimental.ProjectCache.PluginLoggerBase logger, System.Threading.CancellationToken cancellationToken);
+    }
+    [System.Runtime.InteropServices.StructLayoutAttribute(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public partial struct ProxyBuildResults
+    {
+        public ProxyBuildResults(System.Collections.Generic.IReadOnlyDictionary<string, string> proxyTargetToRealTargetMap) { throw null;}
+        public System.Collections.Generic.IReadOnlyDictionary<string, string> ProxyTargetToRealTargetMap { get { throw null; } }
+    }
+}
 namespace Microsoft.Build.FileSystem
 {
     public abstract partial class MSBuildFileSystemBase

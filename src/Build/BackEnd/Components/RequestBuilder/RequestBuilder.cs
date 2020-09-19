@@ -14,11 +14,17 @@ using Microsoft.Build.Shared;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.Build.FileSystem;
+using Microsoft.Build.Graph;
+using Microsoft.Build.Shared.FileSystem;
 using NodeLoggingContext = Microsoft.Build.BackEnd.Logging.NodeLoggingContext;
 using ProjectLoggingContext = Microsoft.Build.BackEnd.Logging.ProjectLoggingContext;
 
@@ -271,7 +277,7 @@ namespace Microsoft.Build.BackEnd
 
                     if (flattenedException.InnerExceptions.All(ex => (ex is TaskCanceledException || ex is OperationCanceledException)))
                     {
-                        // ignore -- just indicates that the task finished cancelling before we got a chance to wait on it.  
+                        // ignore -- just indicates that the task finished cancelling before we got a chance to wait on it.
                         taskCleanedUp = true;
                     }
                     else
@@ -530,7 +536,7 @@ namespace Microsoft.Build.BackEnd
                 }
                 finally
                 {
-                    // If this was the top level submission doing the waiting, we are done with this submission and it's 
+                    // If this was the top level submission doing the waiting, we are done with this submission and it's
                     // main thread building context
                     if (!recursive)
                     {
@@ -560,10 +566,10 @@ namespace Microsoft.Build.BackEnd
             _cancellationTokenSource = new CancellationTokenSource();
 
             // IMPLEMENTATION NOTE: It may look strange that we are creating new tasks here which immediately turn around and create
-            // more tasks that look async.  The reason for this is that while these methods are technically async, they really only 
+            // more tasks that look async.  The reason for this is that while these methods are technically async, they really only
             // unwind at very specific times according to the needs of MSBuild, in particular when we are waiting for results from
             // another project or when we are Yielding the Build Engine while running certain tasks.  Essentially, the Request Builder
-            // and related components form a giant state machine and the tasks are used to implement one very deep co-routine.  
+            // and related components form a giant state machine and the tasks are used to implement one very deep co-routine.
             if (IsBuilderUsingLegacyThreadingSemantics(_componentHost, _requestEntry))
             {
                 // Create a task which completes when the legacy threading task thread is finished.
@@ -572,13 +578,13 @@ namespace Microsoft.Build.BackEnd
                 _requestTask = Task.Factory.StartNew(
                     () =>
                     {
-                        // If this is a very quick-running request, it is possible that the request will have built and completed in 
+                        // If this is a very quick-running request, it is possible that the request will have built and completed in
                         // the time between when StartBuilderThread is called, and when the threadpool gets around to actually servicing
-                        // this request.  If that's the case, it's also possible that ShutdownComponent() could have already been called, 
-                        // in which case the componentHost will be null.  
+                        // this request.  If that's the case, it's also possible that ShutdownComponent() could have already been called,
+                        // in which case the componentHost will be null.
 
-                        // In that circumstance, by definition we don't have anyone who will want to wait on the LegacyThreadInactiveEvent 
-                        // task, so we can safely just return. Take a snapshot so that we don't fall victim to componentHost being set 
+                        // In that circumstance, by definition we don't have anyone who will want to wait on the LegacyThreadInactiveEvent
+                        // task, so we can safely just return. Take a snapshot so that we don't fall victim to componentHost being set
                         // to null between the null check and asking the LegacyThreadingData for the Task.
                         IBuildComponentHost componentHostSnapshot = _componentHost;
 
@@ -600,9 +606,9 @@ namespace Microsoft.Build.BackEnd
                 ErrorUtilities.VerifyThrow(_componentHost.LegacyThreadingData.MainThreadSubmissionId != _requestEntry.Request.SubmissionId, "Can't start builder thread when we are using legacy threading semantics for this request.");
 
                 // We do not run in STA by default.  Most code does not
-                // require the STA apartment and the .Net default is to 
+                // require the STA apartment and the .Net default is to
                 // create threads with MTA semantics.  We provide this
-                // switch so that those few tasks which may require it 
+                // switch so that those few tasks which may require it
                 // can be made to work.
                 if (Environment.GetEnvironmentVariable("MSBUILDFORCESTA") == "1")
                 {
@@ -719,7 +725,7 @@ namespace Microsoft.Build.BackEnd
             BuildResult result = null;
             VerifyEntryInActiveState();
 
-            // Start the build request            
+            // Start the build request
             try
             {
                 result = await BuildProject();
@@ -801,7 +807,7 @@ namespace Microsoft.Build.BackEnd
                 }
             }
 
-            // Clear out our state now in case any of these callbacks cause the engine to try and immediately 
+            // Clear out our state now in case any of these callbacks cause the engine to try and immediately
             // reuse this builder.
             BuildRequestEntry entryToComplete = _requestEntry;
             _nodeLoggingContext = null;
@@ -851,13 +857,13 @@ namespace Microsoft.Build.BackEnd
                 SaveOperatingEnvironment();
             }
 
-            // Issue the requests to the engine            
+            // Issue the requests to the engine
             RaiseOnNewBuildRequests(requests);
 
             // TODO: OPTIMIZATION: By returning null here, we commit to having to unwind the stack all the
             // way back to RequestThreadProc and then shutting down the thread before we can receive the
             // results and continue with them.  It is not always the case that this will be desirable, however,
-            // particularly if the results we need are immediately available.  In those cases, it would be 
+            // particularly if the results we need are immediately available.  In those cases, it would be
             // useful to wait here for a short period in case those results become available - one second
             // might be enough.  This means we may occasionally get more than one builder thread lying around
             // waiting for something to happen, but that would be short lived.  At the same time it would
@@ -1007,8 +1013,8 @@ namespace Microsoft.Build.BackEnd
         {
             ErrorUtilities.VerifyThrow(_targetBuilder != null, "Target builder is null");
 
-            // Make sure it is null before loading the configuration into the request, because if there is a problem 
-            // we do not wand to have an invalid projectLoggingContext floating around. Also if this is null the error will be 
+            // Make sure it is null before loading the configuration into the request, because if there is a problem
+            // we do not wand to have an invalid projectLoggingContext floating around. Also if this is null the error will be
             // logged with the node logging context
             _projectLoggingContext = null;
 
@@ -1075,6 +1081,75 @@ namespace Microsoft.Build.BackEnd
                 ErrorUtilities.VerifyThrow(_requestEntry.RequestConfiguration.ResultsNodeId == _componentHost.BuildParameters.NodeId, "Results for configuration {0} were not retrieved from node {1}", _requestEntry.RequestConfiguration.ConfigurationId, _requestEntry.RequestConfiguration.ResultsNodeId);
             }
 
+            var graphEntryPoints = GetEntryPoints();
+            var graphEntryPointsString = string.Join("; ", graphEntryPoints.OrderBy(_ => _));
+
+            // TODO: Store cache plugins in a new IBuildComponent, in an projectEntryPoints -> ProjectCache map.
+            var projectCache = ProjectCachePlugins.GetOrAdd(graphEntryPointsString, _ =>
+            {
+                var plugin = GetProjectCacheInstance();
+
+                _nodeLoggingContext.LogCommentFromText(MessageImportance.High, $"\n====== Initializing cache plugin for entrypoints {graphEntryPointsString}");
+                var logger = new BuildRequestEngine.NodeLoggingContextToPluginLoggerAdapter(_nodeLoggingContext, LoggerVerbosity.Detailed);
+
+                var beginResult = plugin.BeginBuildAsync(
+                        new CacheContext(
+                            new FileSystemAdapter(FileSystems.Default),
+                            graphEntryPoints: graphEntryPoints.Select(e => new ProjectGraphEntryPoint(e)).ToArray()),
+                        logger,
+                        _cancellationTokenSource.Token)
+                    .GetAwaiter()
+                    .GetResult();
+
+                Trace.Assert(beginResult);
+
+                return plugin;
+            });
+
+            var pluginLogger = new ProjectLoggingContextToPluginLoggerAdapter(_projectLoggingContext, _requestEntry.RequestConfiguration.ProjectFullPath, LoggerVerbosity.Detailed);
+
+            var buildRequestData = new BuildRequestData(_requestEntry.RequestConfiguration.Project, allTargets);
+
+            _projectLoggingContext.LogCommentFromText(
+                MessageImportance.High,
+                $"\n====== Querying plugin for project {buildRequestData.ProjectFullPath}" +
+                $"\n\tTargets:[{string.Join(", ", buildRequestData.TargetNames)}]" +
+                $"\n\tGlobal Properties: {{{string.Join(",", buildRequestData.GlobalProperties.Select(kvp => $"{kvp.Name}={kvp.EvaluatedValue}"))}}}");
+
+            try
+            {
+                var cacheResult = projectCache.GetCacheResultAsync(
+                        buildRequestData,
+                        pluginLogger,
+                        _cancellationTokenSource.Token)
+                    .GetAwaiter()
+                    .GetResult();
+
+                var message = $"Plugin result: {cacheResult.ResultType}.";
+
+                switch (cacheResult.ResultType)
+                {
+                    case CacheResultType.CacheHit:
+                        _projectLoggingContext.LogCommentFromText(MessageImportance.High, $"{message} Skipping project.");
+
+                        return await GetBuildResultFromCacheResult(cacheResult);
+                    case CacheResultType.CacheMiss:
+                    case CacheResultType.CacheNotApplicable:
+                        _projectLoggingContext.LogCommentFromText(MessageImportance.High, $"{message} Building project.");
+                        break;
+                    case CacheResultType.CacheError:
+                        _projectLoggingContext.LogCommentFromText(MessageImportance.High, $"{message}");
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+            catch (Exception e)
+            {
+                _projectLoggingContext.LogFatalBuildError(e, new BuildEventFileInfo(buildRequestData.ProjectFullPath));
+                throw;
+            }
+
             // Build the targets
             BuildResult result = await _targetBuilder.BuildTargets(_projectLoggingContext, _requestEntry, this, allTargets, _requestEntry.RequestConfiguration.BaseLookup, _cancellationTokenSource.Token);
 
@@ -1084,6 +1159,157 @@ namespace Microsoft.Build.BackEnd
             }
 
             return result;
+        }
+
+        private async Task<BuildResult> GetBuildResultFromCacheResult(CacheResult cacheResult)
+        {
+            ErrorUtilities.VerifyThrow(cacheResult.ResultType == CacheResultType.CacheHit, "Only cache hits have results");
+            return cacheResult.BuildResult ?? await BuildAndUseResultFromProxyTarget(cacheResult.ProxyBuildResults.Value);
+        }
+
+        private async Task<BuildResult> BuildAndUseResultFromProxyTarget(ProxyBuildResults proxyBuildResults)
+        {
+            var proxyTargets = proxyBuildResults.ProxyTargetToRealTargetMap.Keys.ToArray();
+
+            var proxyResult = await _targetBuilder.BuildTargets(_projectLoggingContext, _requestEntry, this, proxyTargets, _requestEntry.RequestConfiguration.BaseLookup, _cancellationTokenSource.Token);
+
+            ErrorUtilities.VerifyThrow(proxyResult.OverallResult == BuildResultCode.Success, $"Building {string.Join(",", proxyTargets)} failed");
+
+            var resultsCache = (IResultsCache)_componentHost.GetComponent(BuildComponentType.ResultsCache);
+            var existingBuildResult = resultsCache.GetResultsForConfiguration(_requestEntry.Request.ConfigurationId);
+
+            foreach (var proxyTarget in proxyTargets)
+            {
+                var proxyTargetResult = proxyResult.ResultsByTarget[proxyTarget];
+                var realTarget = proxyBuildResults.ProxyTargetToRealTargetMap[proxyTarget];
+
+                // Update the results cache.
+                existingBuildResult.AddResultsForTarget(
+                    realTarget,
+                    proxyTargetResult);
+
+                // Update and return the proxy result because TargetBuilder.BuildTargets did some mutations on it not present in the cached result.
+                proxyResult.AddResultsForTarget(
+                    realTarget,
+                    proxyTargetResult);
+            }
+
+            // Return the proxy result because TargetBuilder.BuildTargets did some mutations on it not present in the cached result.
+            return proxyResult;
+        }
+
+        private BuildResult PrepareAndSaveResults(BuildResult buildResult)
+        {
+            // Plugin provided build result doesn't have build context info (submission id, config id, etc). Add it here.
+            var initializedBuildResult = new BuildResult(RequestEntry.Request, buildResult, null);
+
+            var resultsCache = (IResultsCache)_componentHost.GetComponent(BuildComponentType.ResultsCache);
+            var existingBuildResult = resultsCache.GetResultsForConfiguration(_requestEntry.Request.ConfigurationId);
+
+            if (existingBuildResult != null)
+            {
+                existingBuildResult.MergeResults(initializedBuildResult);
+            }
+            else
+            {
+                resultsCache.AddResult(initializedBuildResult);
+            }
+
+            return initializedBuildResult;
+        }
+
+        public static ConcurrentDictionary<string, ProjectCacheBase> ProjectCachePlugins = new ConcurrentDictionary<string, ProjectCacheBase>();
+
+        private IReadOnlyCollection<string> GetEntryPoints()
+        {
+            var projectInstance = _requestEntry.RequestConfiguration.Project;
+
+            var graphEntryPoints = projectInstance.GetPropertyValue(PropertyNames.GraphEntryPointsForProjectCachePlugins);
+
+            if (!string.IsNullOrEmpty(graphEntryPoints))
+            {
+                return ExpressionShredder.SplitSemiColonSeparatedList(graphEntryPoints).ToArray();
+            }
+
+            ErrorUtilities.VerifyThrowInternalNull(_requestEntry.Request.SubmissionProjectPath, nameof(_requestEntry.Request.SubmissionProjectPath));
+
+            return new[] {_requestEntry.Request.SubmissionProjectPath};
+        }
+
+#if FEATURE_ASSEMBLYLOADCONTEXT
+        private static readonly CoreClrAssemblyLoader _loader = new CoreClrAssemblyLoader();
+#endif
+
+        private static ProjectCacheBase GetProjectCacheInstance()
+        {
+            var pluginDll = @"E:\projects\CloudBuild\private\Tools\QuickbuildProjectCachePlugin\src\objd\amd64\QuickbuildProjectCachePlugin.dll";
+
+            var assembly = LoadAssembly(pluginDll);
+
+            var pluginType = GetTypes<ProjectCacheBase>(assembly).First();
+
+            return (ProjectCacheBase) Activator.CreateInstance(pluginType);
+
+            Assembly LoadAssembly(string resolverPath)
+            {
+#if !FEATURE_ASSEMBLYLOADCONTEXT
+                return Assembly.LoadFrom(resolverPath);
+#else
+                return _loader.LoadFromPath(resolverPath);
+#endif
+            }
+
+            IEnumerable<Type> GetTypes<T>(Assembly assembly)
+            {
+                return assembly.ExportedTypes
+                    .Select(type => new {type, info = type.GetTypeInfo()})
+                    .Where(t => t.info.IsClass && t.info.IsPublic && !t.info.IsAbstract && typeof(T).IsAssignableFrom(t.type))
+                    .Select(t => t.type);
+            }
+        }
+
+        private class ProjectLoggingContextToPluginLoggerAdapter : PluginLoggerBase
+        {
+            private readonly ProjectLoggingContext _projectLoggingContext;
+            private readonly string _projectPath;
+
+            public ProjectLoggingContextToPluginLoggerAdapter(
+                ProjectLoggingContext projectLoggingContext,
+                string projectPath,
+                LoggerVerbosity verbosity) : base(verbosity)
+            {
+                _projectLoggingContext = projectLoggingContext;
+                _projectPath = projectPath;
+            }
+
+            public override bool HasLoggedErrors { get; protected set; }
+
+            public override void LogMessage(string message)
+            {
+                _projectLoggingContext.LogCommentFromText(MessageImportance.High, message);
+            }
+
+            public override void LogWarning(string warning)
+            {
+                _projectLoggingContext.LogWarningFromText(
+                    null,
+                    null,
+                    null,
+                    new BuildEventFileInfo(_projectPath),
+                    warning);
+            }
+
+            public override void LogError(string error)
+            {
+                HasLoggedErrors = true;
+
+                _projectLoggingContext.LogErrorFromText(
+                    null,
+                    null,
+                    null,
+                    new BuildEventFileInfo(_projectPath),
+                    error);
+            }
         }
 
         /// <summary>

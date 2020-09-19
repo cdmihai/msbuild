@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -1526,6 +1526,8 @@ namespace Microsoft.Build.BackEnd
             configuration.ResultsNodeId = parentRequest.AssignedNode;
         }
 
+        private readonly ConcurrentDictionary<int, string> submissionRootPaths = new ConcurrentDictionary<int, string>();
+
         /// <summary>
         /// Marks the request as being blocked by new requests whose results we must get before we can proceed.
         /// </summary>
@@ -1533,6 +1535,23 @@ namespace Microsoft.Build.BackEnd
         {
             ErrorUtilities.VerifyThrowArgumentNull(blocker, nameof(blocker));
             ErrorUtilities.VerifyThrowArgumentNull(responses, nameof(responses));
+
+            if (parentRequest == null)
+            {
+                var rootRequest = blocker.BuildRequests.First();
+
+                Trace.Assert(rootRequest.IsRootRequest);
+
+                var rootConfig = _configCache[rootRequest.ConfigurationId];
+                submissionRootPaths.AddOrUpdate(
+                    rootRequest.SubmissionId,
+                    k => rootConfig.ProjectFullPath,
+                    (k, p) =>
+                    {
+                        throw new InvalidOperationException(
+                            $"submission {rootRequest.SubmissionId} already has root path at {p}");
+                    });
+            }
 
             // The request is waiting on new requests.
             bool abortRequestBatch = false;
@@ -1544,6 +1563,8 @@ namespace Microsoft.Build.BackEnd
                 {
                     AssignGlobalRequestId(request);
                 }
+
+                request.SubmissionProjectPath = submissionRootPaths[request.SubmissionId];
 
                 int nodeForResults = (parentRequest == null) ? InvalidNodeId : parentRequest.AssignedNode;
                 TraceScheduler("Received request {0} (node request {1}) with parent {2} from node {3}", request.GlobalRequestId, request.NodeRequestId, request.ParentGlobalRequestId, nodeForResults);
