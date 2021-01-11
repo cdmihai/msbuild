@@ -495,7 +495,7 @@ namespace Microsoft.Build.Shared
 
             Mode = mode;
             RunningTests = runningTests;
-            RunningInVisualStudio = runningInVisualStudio;
+            RunningInVisualStudio = true;
             CurrentMSBuildExePath = currentMSBuildExePath;
             VisualStudioInstallRootDirectory = visualStudioPath;
 
