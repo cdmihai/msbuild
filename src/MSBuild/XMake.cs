@@ -571,7 +571,7 @@ namespace Microsoft.Build.CommandLine
                 bool enableProfiler = false;
                 bool interactive = false;
                 bool isolateProjects = false;
-                bool graphBuild = false;
+                GraphBuildOptions graphBuildOptions = null;
                 bool lowPriority = false;
                 string[] inputResultsCaches = null;
                 string outputResultsCache = null;
@@ -607,7 +607,7 @@ namespace Microsoft.Build.CommandLine
                         ref enableProfiler,
                         ref restoreProperties,
                         ref isolateProjects,
-                        ref graphBuild,
+                        ref graphBuildOptions,
                         ref inputResultsCaches,
                         ref outputResultsCache,
                         ref lowPriority,
@@ -685,7 +685,7 @@ namespace Microsoft.Build.CommandLine
                                     enableProfiler,
                                     interactive,
                                     isolateProjects,
-                                    graphBuild,
+                                    graphBuildOptions,
                                     lowPriority,
                                     inputResultsCaches,
                                     outputResultsCache))
@@ -995,7 +995,7 @@ namespace Microsoft.Build.CommandLine
             bool enableProfiler,
             bool interactive,
             bool isolateProjects,
-            bool graphBuild,
+            GraphBuildOptions graphBuildOptions,
             bool lowPriority,
             string[] inputResultsCaches,
             string outputResultsCache
@@ -1225,9 +1225,9 @@ namespace Microsoft.Build.CommandLine
                             BuildRequestData buildRequest = null;
                             if (!restoreOnly)
                             {
-                                if (graphBuild)
+                                if (graphBuildOptions != null)
                                 {
-                                    graphBuildRequest = new GraphBuildRequestData(new ProjectGraphEntryPoint(projectFile, globalProperties), targets, null);
+                                    graphBuildRequest = new GraphBuildRequestData(new[]{ new ProjectGraphEntryPoint(projectFile, globalProperties) }, targets, null, BuildRequestDataFlags.None, graphBuildOptions);
                                 }
                                 else
                                 {
@@ -1247,7 +1247,7 @@ namespace Microsoft.Build.CommandLine
 
                             if (!restoreOnly)
                             {
-                                if (graphBuild)
+                                if (graphBuildOptions != null)
                                 {
                                     (result, exception) = ExecuteGraphBuild(buildManager, graphBuildRequest);
                                 }
@@ -2135,7 +2135,7 @@ namespace Microsoft.Build.CommandLine
             ref bool enableProfiler,
             ref Dictionary<string, string> restoreProperties,
             ref bool isolateProjects,
-            ref bool graphBuild,
+            ref GraphBuildOptions graphBuild,
             ref string[] inputResultsCaches,
             ref string outputResultsCache,
             ref bool lowPriority,
@@ -2317,7 +2317,7 @@ namespace Microsoft.Build.CommandLine
 
                     if (commandLineSwitches.IsParameterizedSwitchSet(CommandLineSwitches.ParameterizedSwitch.GraphBuild))
                     {
-                        graphBuild = ProcessBooleanSwitch(commandLineSwitches[CommandLineSwitches.ParameterizedSwitch.GraphBuild], defaultValue: true, resourceName: "InvalidGraphBuildValue");
+                        graphBuild = ProcessGraphBuildSwitch(commandLineSwitches[CommandLineSwitches.ParameterizedSwitch.GraphBuild]);
                     }
 
                     if (commandLineSwitches.IsParameterizedSwitchSet(CommandLineSwitches.ParameterizedSwitch.LowPriority))
@@ -2379,6 +2379,37 @@ namespace Microsoft.Build.CommandLine
             ErrorUtilities.VerifyThrow(!invokeBuild || !String.IsNullOrEmpty(projectFile), "We should have a project file if we're going to build.");
 
             return invokeBuild;
+        }
+
+        internal static GraphBuildOptions ProcessGraphBuildSwitch(string[] parameters)
+        {
+            var options = new GraphBuildOptions();
+
+            // Before /graph had parameters, it was treated as a boolean switch.
+            // Preserve that in case anyone is using /graph:{false|true}
+            if (parameters.Length == 1 && bool.TryParse(parameters[0], out var boolValue))
+            {
+                return boolValue ? options : null;
+            }
+
+            foreach (var parameter in parameters)
+            {
+                if (string.IsNullOrWhiteSpace(parameter))
+                {
+                    continue;
+                }
+
+                if (parameter.Trim().Equals("NoBuild", StringComparison.OrdinalIgnoreCase))
+                {
+                    options = options with {Build = false};
+                }
+                else
+                {
+                    CommandLineSwitchException.Throw("InvalidGraphBuildValue", parameter);
+                }
+            }
+
+            return options;
         }
 
         private static string ProcessOutputResultsCache(CommandLineSwitches commandLineSwitches)

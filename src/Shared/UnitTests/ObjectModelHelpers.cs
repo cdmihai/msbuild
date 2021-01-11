@@ -1930,6 +1930,11 @@ namespace Microsoft.Build.UnitTests
                 _buildManager.BeginBuild(actualBuildParameters, deferredMessages);
             }
 
+            public GraphBuildResult BuildGraphSubmission(GraphBuildRequestData requestData)
+            {
+                return _buildManager.BuildRequest(requestData);
+            }
+
             public BuildResult BuildProjectFile(string projectFile, string[] entryTargets = null)
             {
                 var buildResult = _buildManager.BuildRequest(
